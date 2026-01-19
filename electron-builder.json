@@ -1,0 +1,55 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.claude-composer.app",
+  "productName": "Claude Composer",
+  "directories": {
+    "output": "release",
+    "app": "."
+  },
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*",
+    "package.json",
+    "!app/**/*",
+    "!src/**/*",
+    "node_modules/node-pty/**/*",
+    "node_modules/electron-store/**/*",
+    "node_modules/chokidar/**/*",
+    "node_modules/conf/**/*",
+    "node_modules/atomically/**/*",
+    "node_modules/dot-prop/**/*",
+    "node_modules/env-paths/**/*",
+    "node_modules/json-schema-typed/**/*",
+    "node_modules/ajv/**/*",
+    "node_modules/ajv-formats/**/*",
+    "node_modules/debounce-fn/**/*",
+    "node_modules/mimic-function/**/*",
+    "node_modules/semver/**/*",
+    "node_modules/readdirp/**/*",
+    "node_modules/anymatch/**/*",
+    "node_modules/braces/**/*",
+    "node_modules/fill-range/**/*",
+    "node_modules/to-regex-range/**/*",
+    "node_modules/is-number/**/*",
+    "node_modules/picomatch/**/*",
+    "node_modules/normalize-path/**/*",
+    "node_modules/glob-parent/**/*",
+    "node_modules/is-glob/**/*",
+    "node_modules/is-extglob/**/*",
+    "node_modules/binary-extensions/**/*"
+  ],
+  "asarUnpack": [
+    "node_modules/node-pty/**/*"
+  ],
+  "mac": {
+    "target": ["dmg", "zip"],
+    "icon": null,
+    "category": "public.app-category.developer-tools"
+  },
+  "win": {
+    "target": ["nsis", "zip"]
+  },
+  "linux": {
+    "target": ["AppImage", "deb"]
+  }
+}

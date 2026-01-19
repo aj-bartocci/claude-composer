@@ -1,0 +1,82 @@
+:root {
+  /* Light theme (default) */
+  --color-background: #ffffff;
+  --color-foreground: #1a1a1a;
+  --color-muted: #6b7280;
+  --color-accent: #3b82f6;
+  --color-border: #e5e7eb;
+  --color-sidebar: #f9fafb;
+  --color-panel: #ffffff;
+  --color-item-bg: #f3f4f6;
+  --color-item-hover: #e5e7eb;
+  --color-item-selected: #dbeafe;
+  --color-code-bg: #f8f9fc;
+  --color-code-border: #e2e6ef;
+  --color-code-text: #374151;
+}
+
+.dark {
+  /* Dark theme */
+  --color-background: #1e1e2e;
+  --color-foreground: #cdd6f4;
+  --color-muted: #a6adc8;
+  --color-accent: #89b4fa;
+  --color-border: #45475a;
+  --color-sidebar: #181825;
+  --color-panel: #1e1e2e;
+  --color-item-bg: #313244;
+  --color-item-hover: #45475a;
+  --color-item-selected: #45475a;
+  --color-code-bg: #1a1a2e;
+  --color-code-border: #2a2a4a;
+  --color-code-text: #a8b4c8;
+}
+
+/* Base styles */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Electron window drag region */
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}
+
+/* Resize handle styling */
+[data-separator] {
+  transition: background-color 150ms ease;
+}
+[data-separator]:hover {
+  background: var(--color-accent) !important;
+}
