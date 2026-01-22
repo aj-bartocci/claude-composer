@@ -11,7 +11,7 @@
     "build": "tsc && vite build && electron-builder",
     "preview": "vite preview",
     "lint": "eslint src",
-    "postinstall": "electron-rebuild"
+    "postinstall": "node -e \"if(!process.env.CI)require('child_process').execSync('electron-rebuild',{stdio:'inherit'})\""
   },
   "dependencies": {
     "@tailwindcss/typography": "^0.5.19",
@@ -27,13 +27,13 @@
     "react-resizable-panels": "^4.4.1"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8",
-    "electron-rebuild": "^3.2.9",
     "eslint": "^9.13.0",
     "playwright": "^1.57.0",
     "postcss": "^8.4.49",
