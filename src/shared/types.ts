@@ -128,6 +128,18 @@ export interface Project {
   lastActivity: number // sessions-index.json mtime (ms since epoch)
 }
 
+// Claude native task (from ~/.claude/tasks/)
+export interface ClaudeTask {
+  id: string
+  subject: string
+  description: string
+  activeForm?: string
+  status: 'pending' | 'in_progress' | 'completed'
+  blocks: string[]
+  blockedBy: string[]
+  sessionId: string // Which session this task belongs to
+}
+
 // Terminal session in sidebar
 export interface TerminalSession {
   id: string           // Unique ID for PTY (e.g., "term-1705234567890-abc123")
@@ -211,5 +223,12 @@ export interface ClaudeAPI {
     getVisibleColumns: (projectId: string) => Promise<string[] | null>
     setVisibleColumns: (projectId: string, columns: string[]) => Promise<void>
     onBeansChange: (callback: (beans: Bean[]) => void) => () => void
+  }
+  claudeTasks: {
+    getAllTasks: () => Promise<ClaudeTask[]>
+    getSessionTasks: (sessionId: string) => Promise<ClaudeTask[]>
+    startWatcher: () => Promise<void>
+    stopWatcher: () => Promise<void>
+    onTasksChange: (callback: (tasks: ClaudeTask[]) => void) => () => void
   }
 }

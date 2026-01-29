@@ -7,6 +7,7 @@ import { Terminal } from './components/Terminal'
 import { TerminalListItem } from './components/TerminalListItem'
 import { ConfirmModal } from './components/ConfirmModal'
 import { BeansBoard } from './components/BeansBoard'
+import { ClaudeBoard } from './components/ClaudeBoard'
 import { useTheme } from './hooks/useTheme'
 import { SettingsModal } from './components/SettingsModal'
 
@@ -130,6 +131,17 @@ const mockApi: ClaudeAPI = {
     setVisibleColumns: async () => {},
     onBeansChange: () => () => {},
   },
+  claudeTasks: {
+    getAllTasks: async () => [
+      { id: '1', subject: 'Set up project structure', description: 'Initialize the project with proper folder structure and dependencies', activeForm: undefined, status: 'completed' as const, blocks: [], blockedBy: [], sessionId: 'mock-session-1' },
+      { id: '2', subject: 'Implement authentication', description: 'Add login/logout with JWT tokens', activeForm: 'Implementing JWT validation', status: 'in_progress' as const, blocks: ['3'], blockedBy: ['1'], sessionId: 'mock-session-1' },
+      { id: '3', subject: 'Build user dashboard', description: 'Create the main user dashboard with widgets', activeForm: undefined, status: 'pending' as const, blocks: [], blockedBy: ['2'], sessionId: 'mock-session-1' },
+    ],
+    getSessionTasks: async () => [],
+    startWatcher: async () => {},
+    stopWatcher: async () => {},
+    onTasksChange: () => () => {},
+  },
 }
 
 // Get API - check dynamically each time to handle race conditions during startup
@@ -168,7 +180,7 @@ function App() {
   // Beans board state
   const [hasBeansDir, setHasBeansDir] = useState(false)
   const [beans, setBeans] = useState<Bean[]>([])
-  const [viewMode, setViewMode] = useState<'files' | 'board'>('files')
+  const [viewMode, setViewMode] = useState<'files' | 'board' | 'claude-board'>('files')
   const filePathRestoredForProject = useRef<string | null>(null)
   const [markdownViewMode, setMarkdownViewMode] = useState<'rendered' | 'raw'>('rendered')
   const messagesContainerRef = useRef<HTMLDivElement>(null)
@@ -929,6 +941,19 @@ function App() {
                 {viewMode === 'board' ? 'Back to Files' : 'Board'}
               </button>
             )}
+            {/* Claude Board button - temporary, for Claude's native task tracking */}
+            {hasBeansDir && (
+              <button
+                onClick={() => setViewMode(viewMode === 'claude-board' ? 'files' : 'claude-board')}
+                className={`mt-2 w-full p-2 text-sm rounded transition-colors ${
+                  viewMode === 'claude-board'
+                    ? 'bg-accent text-white'
+                    : 'bg-item-bg hover:bg-item-hover text-foreground'
+                }`}
+              >
+                {viewMode === 'claude-board' ? 'Back to Files' : 'Claude Board'}
+              </button>
+            )}
           </section>
 
           {/* Sessions section */}
@@ -1095,6 +1120,8 @@ function App() {
         <Panel id="main" minSize="10%">
         {viewMode === 'board' ? (
           <BeansBoard beans={beans} projectId={selectedProject!.id} api={api} />
+        ) : viewMode === 'claude-board' ? (
+          <ClaudeBoard api={api} />
         ) : (
           <main className="h-full bg-background flex flex-col overflow-hidden">
             {selectedFilePath && (

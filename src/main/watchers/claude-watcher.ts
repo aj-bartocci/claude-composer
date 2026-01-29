@@ -5,10 +5,12 @@ import type { BrowserWindow } from 'electron'
 import { invalidateSessionCache, getSessions } from '../ipc/chat'
 import { getActiveSubagents } from '../ipc/subagents'
 import { getBeans } from '../ipc/beans'
+import { getAllTasks } from '../ipc/claude-tasks'
 
 const CLAUDE_DIR = join(homedir(), '.claude')
 const PROJECTS_DIR = join(CLAUDE_DIR, 'projects')
 const TODOS_DIR = join(CLAUDE_DIR, 'todos')
+const TASKS_DIR = join(CLAUDE_DIR, 'tasks')
 
 let watcher: chokidar.FSWatcher | null = null
 
@@ -149,5 +151,56 @@ async function emitBeansChange(mainWindow: BrowserWindow, projectPath: string) {
     mainWindow.webContents.send('beans:change', beans)
   } catch (err) {
     console.error('Failed to emit beans change:', err)
+  }
+}
+
+// Claude Tasks watcher
+let claudeTasksWatcher: chokidar.FSWatcher | null = null
+
+/**
+ * Start watching ~/.claude/tasks/ for task changes
+ */
+export function startClaudeTasksWatcher(mainWindow: BrowserWindow) {
+  stopClaudeTasksWatcher()
+
+  const watchPattern = join(TASKS_DIR, '**/*.json')
+
+  claudeTasksWatcher = chokidar.watch(watchPattern, {
+    persistent: true,
+    ignoreInitial: true,
+    awaitWriteFinish: {
+      stabilityThreshold: 100,
+      pollInterval: 50,
+    },
+  })
+
+  const emitChange = async () => {
+    try {
+      const tasks = await getAllTasks()
+      mainWindow.webContents.send('claudeTasks:change', tasks)
+    } catch (err) {
+      console.error('Failed to emit Claude tasks change:', err)
+    }
+  }
+
+  claudeTasksWatcher.on('add', emitChange)
+  claudeTasksWatcher.on('change', emitChange)
+  claudeTasksWatcher.on('unlink', emitChange)
+
+  claudeTasksWatcher.on('error', (error) => {
+    console.error('Claude tasks watcher error:', error)
+  })
+
+  console.log('Claude tasks watcher started')
+}
+
+/**
+ * Stop watching Claude tasks
+ */
+export function stopClaudeTasksWatcher() {
+  if (claudeTasksWatcher) {
+    claudeTasksWatcher.close()
+    claudeTasksWatcher = null
+    console.log('Claude tasks watcher stopped')
   }
 }

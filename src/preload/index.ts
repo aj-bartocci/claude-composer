@@ -127,6 +127,22 @@ const api = {
       return () => ipcRenderer.removeListener('beans:change', handler)
     },
   },
+
+  claudeTasks: {
+    getAllTasks: () =>
+      ipcRenderer.invoke('claudeTasks:getAllTasks'),
+    getSessionTasks: (sessionId: string) =>
+      ipcRenderer.invoke('claudeTasks:getSessionTasks', sessionId),
+    startWatcher: () =>
+      ipcRenderer.invoke('claudeTasks:startWatcher'),
+    stopWatcher: () =>
+      ipcRenderer.invoke('claudeTasks:stopWatcher'),
+    onTasksChange: (callback: (tasks: unknown[]) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, tasks: unknown[]) => callback(tasks)
+      ipcRenderer.on('claudeTasks:change', handler)
+      return () => ipcRenderer.removeListener('claudeTasks:change', handler)
+    },
+  },
 }
 
 contextBridge.exposeInMainWorld('claude', api)

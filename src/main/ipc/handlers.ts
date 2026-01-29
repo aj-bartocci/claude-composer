@@ -6,7 +6,8 @@ import { getFileTree, getFileContent, saveFileContent } from './files'
 import { getAllProjects, decodeProjectPath } from './projects'
 import { spawnTerminal, writeToTerminal, resizeTerminal, killTerminal, type TerminalSpawnOptions } from './terminal'
 import { checkBeansDirectory, getBeans } from './beans'
-import { startBeansWatcher, stopBeansWatcher } from '../watchers/claude-watcher'
+import { getAllTasks, getSessionTasks } from './claude-tasks'
+import { startBeansWatcher, stopBeansWatcher, startClaudeTasksWatcher, stopClaudeTasksWatcher } from '../watchers/claude-watcher'
 import { getCustomThemes, importTheme, ensureDefaultThemes } from './themes'
 import Store from 'electron-store'
 import type { Theme, AppearanceSettings } from '../../shared/types'
@@ -195,6 +196,23 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
     const all = store.get('beansVisibleColumns') ?? {}
     all[projectId] = columns
     store.set('beansVisibleColumns', all)
+  })
+
+  // Claude Tasks handlers
+  ipcMain.handle('claudeTasks:getAllTasks', async () => {
+    return getAllTasks()
+  })
+
+  ipcMain.handle('claudeTasks:getSessionTasks', async (_event, sessionId: string) => {
+    return getSessionTasks(sessionId)
+  })
+
+  ipcMain.handle('claudeTasks:startWatcher', async () => {
+    startClaudeTasksWatcher(mainWindow)
+  })
+
+  ipcMain.handle('claudeTasks:stopWatcher', async () => {
+    stopClaudeTasksWatcher()
   })
 }
 
