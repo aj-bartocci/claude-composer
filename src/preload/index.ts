@@ -142,6 +142,10 @@ const api = {
       ipcRenderer.on('claudeTasks:change', handler)
       return () => ipcRenderer.removeListener('claudeTasks:change', handler)
     },
+    getHiddenSessions: () =>
+      ipcRenderer.invoke('claudeTasks:getHiddenSessions'),
+    setHiddenSessions: (sessionIds: string[]) =>
+      ipcRenderer.invoke('claudeTasks:setHiddenSessions', sessionIds),
   },
 }
 

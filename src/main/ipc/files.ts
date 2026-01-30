@@ -16,8 +16,7 @@ async function buildFileTree(currentPath: string, rootPath: string): Promise<Fil
     const entries = await readdir(currentPath, { withFileTypes: true })
 
     for (const entry of entries) {
-      // Skip hidden files and ignored directories
-      if (entry.name.startsWith('.')) continue
+      // Skip specific ignored directories
       if (IGNORE_DIRS.includes(entry.name)) continue
 
       const fullPath = join(currentPath, entry.name)

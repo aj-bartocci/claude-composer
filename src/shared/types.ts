@@ -230,5 +230,7 @@ export interface ClaudeAPI {
     startWatcher: () => Promise<void>
     stopWatcher: () => Promise<void>
     onTasksChange: (callback: (tasks: ClaudeTask[]) => void) => () => void
+    getHiddenSessions: () => Promise<string[]>
+    setHiddenSessions: (sessionIds: string[]) => Promise<void>
   }
 }

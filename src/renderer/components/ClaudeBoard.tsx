@@ -62,15 +62,18 @@ export function ClaudeBoard({ api }: ClaudeBoardProps) {
   const [loading, setLoading] = useState(true)
   const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set())
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
+  const [hiddenSessions, setHiddenSessions] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [allTasks, allSessions] = await Promise.all([
+        const [allTasks, allSessions, hidden] = await Promise.all([
           api.claudeTasks.getAllTasks(),
           api.chat.getSessions(),
+          api.claudeTasks.getHiddenSessions(),
         ])
         setTasks(allTasks)
+        setHiddenSessions(new Set(hidden))
 
         const sessionMap = new Map<string, Session>()
         for (const session of allSessions) {
@@ -116,7 +119,7 @@ export function ClaudeBoard({ api }: ClaudeBoardProps) {
     return result
   }, [tasks])
 
-  // Group sessions by swimlane
+  // Group sessions by swimlane (excluding hidden)
   const sessionsBySwimlane = useMemo(() => {
     const result: Record<Swimlane, SessionGroup[]> = {
       pending: [],
@@ -125,11 +128,13 @@ export function ClaudeBoard({ api }: ClaudeBoardProps) {
     }
 
     for (const group of sessionGroups) {
-      result[group.swimlane].push(group)
+      if (!hiddenSessions.has(group.sessionId)) {
+        result[group.swimlane].push(group)
+      }
     }
 
     return result
-  }, [sessionGroups])
+  }, [sessionGroups, hiddenSessions])
 
   const toggleExpanded = (sessionId: string) => {
     setExpandedSessions(prev => {
@@ -179,6 +184,15 @@ export function ClaudeBoard({ api }: ClaudeBoardProps) {
   const cancelEditing = () => {
     setEditingSessionId(null)
     setEditValue('')
+  }
+
+  const hideSession = (sessionId: string) => {
+    setHiddenSessions(prev => {
+      const next = new Set(prev)
+      next.add(sessionId)
+      api.claudeTasks.setHiddenSessions([...next])
+      return next
+    })
   }
 
   if (loading) {
@@ -284,6 +298,16 @@ export function ClaudeBoard({ api }: ClaudeBoardProps) {
                               </span>
                             )}
                           </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              hideSession(sessionId)
+                            }}
+                            className="text-muted hover:text-red-400 text-sm flex-shrink-0 px-1 transition-colors"
+                            title="Hide from board"
+                          >
+                            ×
+                          </button>
                           <span className="text-muted text-xs flex-shrink-0">
                             {isExpanded ? '▾' : '▸'}
                           </span>

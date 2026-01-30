@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Panel, Group as PanelGroup, Separator as PanelResizeHandle, usePanelRef, type PanelImperativeHandle } from 'react-resizable-panels'
+import { Panel, Group as PanelGroup, Separator as PanelResizeHandle, usePanelRef } from 'react-resizable-panels'
 import ReactMarkdown from 'react-markdown'
-import type { Session, Message, Subagent, Theme, Project, ClaudeAPI, TerminalSession, Bean } from '../shared/types'
+import type { Session, Subagent, Theme, Project, ClaudeAPI, TerminalSession, Bean } from '../shared/types'
 import { SubagentCard } from './components/SubagentCard'
 import { Terminal } from './components/Terminal'
 import { TerminalListItem } from './components/TerminalListItem'
@@ -18,26 +18,7 @@ const mockApi: ClaudeAPI = {
       { id: '1', projectPath: '/test', startedAt: new Date(), lastMessageAt: new Date(), preview: 'Mock session for browser dev', messageCount: 2 },
       { id: '2', projectPath: '/test', startedAt: new Date(Date.now() - 86400000), lastMessageAt: new Date(Date.now() - 86400000), preview: 'Yesterday session', messageCount: 5 },
     ],
-    getMessages: async () => [
-      { messageId: 'm1', sessionId: '1', type: 'message', role: 'user', content: [{ type: 'text', text: 'Find all TypeScript files in the project' }], timestamp: new Date() },
-      { messageId: 'm2', sessionId: '1', type: 'message', role: 'assistant', content: [
-        { type: 'text', text: "I'll search for TypeScript files in the project." },
-        { type: 'tool_use', id: 't1', name: 'Glob', input: { pattern: '**/*.ts' } },
-      ], timestamp: new Date() },
-      { messageId: 'm3', sessionId: '1', type: 'message', role: 'user', content: [
-        { type: 'tool_result', tool_use_id: 't1', content: 'Found 12 files\nsrc/main.ts\nsrc/renderer/App.tsx\nsrc/preload/index.ts\nsrc/shared/types.ts' },
-      ], timestamp: new Date() },
-      { messageId: 'm4', sessionId: '1', type: 'message', role: 'assistant', content: [
-        { type: 'text', text: 'I found 12 TypeScript files. Let me read the main entry point.' },
-        { type: 'tool_use', id: 't2', name: 'Read', input: { path: 'src/main.ts' } },
-      ], timestamp: new Date() },
-      { messageId: 'm5', sessionId: '1', type: 'message', role: 'user', content: [
-        { type: 'tool_result', tool_use_id: 't2', content: 'import { app, BrowserWindow } from "electron"\nimport path from "path"\n\nfunction createWindow() {\n  const win = new BrowserWindow({\n    width: 1200,\n    height: 800,\n  })\n  win.loadFile("index.html")\n}' },
-      ], timestamp: new Date() },
-      { messageId: 'm6', sessionId: '1', type: 'message', role: 'assistant', content: [
-        { type: 'text', text: 'This is the main Electron process file. It creates a browser window with dimensions 1200x800.' },
-      ], timestamp: new Date() },
-    ],
+    getMessages: async () => [],
     showSessionInFinder: async () => {},
     onSessionUpdate: () => () => {},
     onMessagesUpdate: () => () => {},
@@ -141,6 +122,8 @@ const mockApi: ClaudeAPI = {
     startWatcher: async () => {},
     stopWatcher: async () => {},
     onTasksChange: () => () => {},
+    getHiddenSessions: async () => [],
+    setHiddenSessions: async () => {},
   },
 }
 
@@ -160,8 +143,6 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const themeState = useTheme(api)
   const [sessions, setSessions] = useState<Session[]>([])
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
   const [subagents, setSubagents] = useState<Subagent[]>([])
   const [stickySubagents, setStickySubagents] = useState<Subagent[]>([])
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
@@ -183,7 +164,6 @@ function App() {
   const [viewMode, setViewMode] = useState<'files' | 'board' | 'claude-board'>('files')
   const filePathRestoredForProject = useRef<string | null>(null)
   const [markdownViewMode, setMarkdownViewMode] = useState<'rendered' | 'raw'>('rendered')
-  const messagesContainerRef = useRef<HTMLDivElement>(null)
 
   // Sidebar collapse state (persisted to localStorage)
   const [sessionsExpanded, setSessionsExpanded] = useState(() => {
@@ -316,8 +296,6 @@ function App() {
 
   // Panel layout persistence with refs for imperative resizing
   const sidebarRef = usePanelRef()
-  const detailRef = usePanelRef()
-  const showDetailPanel = selectedSessionId !== null
 
   // Apply saved sizes when PanelGroup mounts/remounts (key changes)
   useEffect(() => {
@@ -327,13 +305,9 @@ function App() {
       if (savedSidebar && sidebarRef.current) {
         sidebarRef.current.resize(`${savedSidebar}%`)
       }
-      const savedDetail = localStorage.getItem('claude-center-detail-size')
-      if (savedDetail && detailRef.current) {
-        detailRef.current.resize(`${savedDetail}%`)
-      }
     }, 0)
     return () => clearTimeout(timer)
-  }, [showDetailPanel]) // Re-run when panel config changes
+  }, [])
 
   // Persist sidebar section expand/collapse state
   useEffect(() => {
@@ -344,12 +318,6 @@ function App() {
       terminals: terminalsExpanded,
     }))
   }, [sessionsExpanded, subagentsExpanded, filesExpanded, terminalsExpanded])
-
-  // Sessions pagination
-  const SESSIONS_BATCH_SIZE = 10
-  const [visibleSessionsCount, setVisibleSessionsCount] = useState(SESSIONS_BATCH_SIZE)
-  const visibleSessions = sessions.slice(0, visibleSessionsCount)
-  const hasMoreSessions = visibleSessionsCount < sessions.length
 
   // Re-check for Electron API after mount (handles race condition during dev startup)
   // Poll briefly because preload script may not have finished exposing window.claude
@@ -367,7 +335,6 @@ function App() {
         setProjects([])
         setSelectedProject(null)
         setSessions([])
-        setSelectedSessionId(null)
         clearInterval(interval)
       } else if (attempts >= maxAttempts) {
         console.log('[App] Electron API not found after 2s, staying in mock mode')
@@ -490,9 +457,6 @@ function App() {
       try {
         const projectSessions = await api.chat.getSessions(selectedProject.id)
         setSessions(projectSessions)
-        if (projectSessions.length > 0 && !selectedSessionId) {
-          setSelectedSessionId(projectSessions[0].id)
-        }
       } catch (err) {
         console.error('Failed to load sessions:', err)
       } finally {
@@ -512,65 +476,6 @@ function App() {
     })
     return unsubscribe
   }, [api, selectedProject])
-
-  // Load messages when session selected
-  useEffect(() => {
-    if (!selectedSessionId) {
-      setMessages([])
-      return
-    }
-    const loadMessages = async () => {
-      try {
-        const sessionMessages = await api.chat.getMessages(selectedSessionId)
-        setMessages(sessionMessages)
-      } catch (err) {
-        console.error('Failed to load messages:', err)
-      }
-    }
-    loadMessages()
-
-    // Subscribe to message updates for this session
-    const unsubscribe = api.chat.onMessagesUpdate(({ sessionId }) => {
-      if (sessionId === selectedSessionId) {
-        loadMessages()
-      }
-    })
-    return unsubscribe
-  }, [api, selectedSessionId])
-
-  // Track if user is near bottom of messages (for smart auto-scroll)
-  const wasNearBottomRef = useRef(true)
-  const prevMessagesLengthRef = useRef(0)
-
-  // Update near-bottom state on scroll
-  const handleMessagesScroll = useCallback(() => {
-    const container = messagesContainerRef.current
-    if (!container) return
-    const threshold = 100 // pixels from bottom
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold
-    wasNearBottomRef.current = isNearBottom
-  }, [])
-
-  // Scroll to bottom when messages change, but only if user was near bottom or it's a new session
-  useEffect(() => {
-    const container = messagesContainerRef.current
-    if (!container || messages.length === 0) return
-
-    const isNewSession = prevMessagesLengthRef.current === 0
-    const shouldScroll = isNewSession || wasNearBottomRef.current
-
-    if (shouldScroll) {
-      container.scrollTop = container.scrollHeight
-    }
-
-    prevMessagesLengthRef.current = messages.length
-  }, [messages])
-
-  // Reset scroll state when session changes
-  useEffect(() => {
-    wasNearBottomRef.current = true
-    prevMessagesLengthRef.current = 0
-  }, [selectedSessionId])
 
   // Load subagents for selected project's sessions
   useEffect(() => {
@@ -841,17 +746,6 @@ function App() {
     }
   }, [api, selectedProject])
 
-  const formatDate = (date: Date) => {
-    const d = new Date(date)
-    const today = new Date()
-    const yesterday = new Date(today)
-    yesterday.setDate(yesterday.getDate() - 1)
-
-    if (d.toDateString() === today.toDateString()) return 'Today'
-    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday'
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  }
-
   return (
     <div className="h-screen flex flex-col bg-background text-foreground">
       {/* Title bar */}
@@ -882,7 +776,6 @@ function App() {
       >
         <Panel id="main-area" minSize="20%">
           <PanelGroup
-            key={showDetailPanel ? 'with-detail' : 'without-detail'}
             orientation="horizontal"
             className="h-full"
           >
@@ -909,10 +802,8 @@ function App() {
                 const project = projects.find(p => p.id === e.target.value)
                 if (project) {
                   setSelectedProject(project)
-                  setSelectedSessionId(null)
                   setSelectedFilePath(null)
                   setSessions([]) // Clear to prevent stale session filtering
-                  setVisibleSessionsCount(SESSIONS_BATCH_SIZE) // Reset pagination
                   // Note: stickySubagents are loaded from localStorage in useEffect
                 }
               }}
@@ -928,7 +819,18 @@ function App() {
                 ))
               )}
             </select>
-            {/* Board button - shown when .beans directory exists */}
+            {/* Tasks button - Claude's native task tracking */}
+            <button
+              onClick={() => setViewMode(viewMode === 'claude-board' ? 'files' : 'claude-board')}
+              className={`mt-2 w-full p-2 text-sm rounded transition-colors ${
+                viewMode === 'claude-board'
+                  ? 'bg-accent text-white'
+                  : 'bg-item-bg hover:bg-item-hover text-foreground'
+              }`}
+            >
+              {viewMode === 'claude-board' ? 'Back to Files' : 'Tasks'}
+            </button>
+            {/* Beans button - shown when .beans directory exists */}
             {hasBeansDir && (
               <button
                 onClick={() => setViewMode(viewMode === 'board' ? 'files' : 'board')}
@@ -938,20 +840,7 @@ function App() {
                     : 'bg-item-bg hover:bg-item-hover text-foreground'
                 }`}
               >
-                {viewMode === 'board' ? 'Back to Files' : 'Board'}
-              </button>
-            )}
-            {/* Claude Board button - temporary, for Claude's native task tracking */}
-            {hasBeansDir && (
-              <button
-                onClick={() => setViewMode(viewMode === 'claude-board' ? 'files' : 'claude-board')}
-                className={`mt-2 w-full p-2 text-sm rounded transition-colors ${
-                  viewMode === 'claude-board'
-                    ? 'bg-accent text-white'
-                    : 'bg-item-bg hover:bg-item-hover text-foreground'
-                }`}
-              >
-                {viewMode === 'claude-board' ? 'Back to Files' : 'Claude Board'}
+                {viewMode === 'board' ? 'Back to Files' : 'Beans'}
               </button>
             )}
           </section>
@@ -961,73 +850,11 @@ function App() {
             title="Sessions"
             expanded={sessionsExpanded}
             onToggle={() => setSessionsExpanded(!sessionsExpanded)}
-            className={`px-3 overflow-y-auto ${sessionsExpanded ? 'flex-1' : ''}`}
+            className="px-3"
           >
-            {loading ? (
-              <div className="text-sm text-muted">Loading...</div>
-            ) : sessions.length === 0 ? (
-              <div className="text-sm text-muted">No sessions found</div>
-            ) : (
-              <div className="space-y-1">
-                {visibleSessions.map(session => (
-                  <div
-                    key={session.id}
-                    onClick={() => setSelectedSessionId(session.id)}
-                    className={`p-2 rounded cursor-pointer transition-colors ${
-                      session.id === selectedSessionId
-                        ? 'bg-item-selected'
-                        : 'bg-item-bg hover:bg-item-hover'
-                    }`}
-                  >
-                    <div className="text-xs text-muted">{formatDate(session.lastMessageAt)}</div>
-                    <div className="text-sm truncate">{session.preview || 'Empty session'}</div>
-                  </div>
-                ))}
-                {hasMoreSessions && (
-                  <button
-                    onClick={() => setVisibleSessionsCount(prev => prev + SESSIONS_BATCH_SIZE)}
-                    className="w-full mt-2 p-2 text-sm text-muted hover:text-foreground bg-item-bg hover:bg-item-hover rounded transition-colors"
-                  >
-                    Load More
-                  </button>
-                )}
-              </div>
-            )}
-          </CollapsibleSection>
-
-          {/* Tasks section */}
-          <CollapsibleSection
-            title="Tasks"
-            expanded={subagentsExpanded}
-            onToggle={() => setSubagentsExpanded(!subagentsExpanded)}
-            className={`border-t border-border px-3 overflow-y-auto ${subagentsExpanded ? 'flex-1' : ''}`}
-            headerAction={displaySubagents.length > 0 && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setShowRemoveAllModal(true)
-                }}
-                className="text-muted hover:text-red-500 text-xs px-1 transition-colors"
-                title="Remove all tasks"
-              >
-                Clear
-              </button>
-            )}
-          >
-            {displaySubagents.length === 0 ? (
-              <div className="text-sm text-muted">No active tasks</div>
-            ) : (
-              <div className="space-y-1">
-                {displaySubagents.map(agent => (
-                  <SubagentCard
-                    key={agent.id}
-                    agent={agent}
-                    getAgentTodos={api.subagents.getAgentTodos}
-                    onDismiss={handleDismissSubagent}
-                  />
-                ))}
-              </div>
-            )}
+            <div className="text-sm text-muted">
+              Deprecated: use <code className="px-1 py-0.5 rounded bg-item-bg font-mono text-xs">/resume</code> in Claude
+            </div>
           </CollapsibleSection>
 
           {/* Files section */}
@@ -1035,7 +862,7 @@ function App() {
             title="Files"
             expanded={filesExpanded}
             onToggle={() => setFilesExpanded(!filesExpanded)}
-            className="border-t border-border px-3 pb-3 max-h-64 overflow-y-auto"
+            className={`border-t border-border px-3 pb-3 overflow-y-auto ${filesExpanded ? 'flex-1' : ''}`}
             headerAction={selectedProject && (
               <button
                 onClick={(e) => {
@@ -1077,7 +904,7 @@ function App() {
             title="Terminals"
             expanded={terminalsExpanded}
             onToggle={() => setTerminalsExpanded(!terminalsExpanded)}
-            className="border-t border-border px-3 pb-3 overflow-y-auto"
+            className="border-t border-border px-3 pb-3 overflow-y-auto max-h-48 flex-shrink-0"
             headerAction={selectedProject && (
               <button
                 onClick={(e) => {
@@ -1202,59 +1029,6 @@ function App() {
           </main>
         )}
         </Panel>
-
-        {/* Detail panel - Messages */}
-        {showDetailPanel && (
-          <>
-          <PanelResizeHandle style={{ width: 4, background: 'var(--color-border)', cursor: 'col-resize' }} />
-          <Panel
-            id="detail"
-            panelRef={detailRef}
-            defaultSize="30%"
-            minSize="5%"
-            maxSize="60%"
-            onResize={(size) => {
-              localStorage.setItem('claude-center-detail-size', String(size.asPercentage))
-            }}
-          >
-          <aside className="h-full bg-panel border-l border-border flex flex-col overflow-hidden">
-            <div className="p-3 border-b border-border flex items-center justify-between">
-              <span className="text-sm font-medium truncate">
-                Session Chat
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => selectedSessionId && api.chat.showSessionInFinder(selectedSessionId)}
-                  className="text-muted hover:text-foreground text-sm"
-                  title="Show in Finder"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-                  </svg>
-                </button>
-                <button
-                  onClick={() => setSelectedSessionId(null)}
-                  className="text-muted hover:text-foreground text-lg leading-none"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-            <div ref={messagesContainerRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto p-4">
-              {messages.length === 0 ? (
-                <p className="text-muted">No messages in this session</p>
-              ) : (
-                <div className="space-y-4">
-                  {messages.map(msg => (
-                    <MessageBubble key={msg.messageId} message={msg} />
-                  ))}
-                </div>
-              )}
-            </div>
-          </aside>
-          </Panel>
-          </>
-        )}
           </PanelGroup>
         </Panel>
 
@@ -1332,107 +1106,6 @@ function App() {
         onImportTheme={themeState.importTheme}
         api={api}
       />
-    </div>
-  )
-}
-
-function MessageBubble({ message }: { message: Message }) {
-  const [expandedResults, setExpandedResults] = useState<Set<number>>(new Set())
-
-  // Check if this message contains only tool_result blocks (system output, not user input)
-  const isToolResultOnly = message.content.every(block => block.type === 'tool_result')
-  const isUser = message.role === 'user' && !isToolResultOnly
-
-  const toggleResult = (index: number) => {
-    setExpandedResults(prev => {
-      const next = new Set(prev)
-      if (next.has(index)) {
-        next.delete(index)
-      } else {
-        next.add(index)
-      }
-      return next
-    })
-  }
-
-  // Group consecutive tool_use and tool_result blocks
-  const renderContent = () => {
-    const elements: React.ReactNode[] = []
-    let i = 0
-
-    while (i < message.content.length) {
-      const block = message.content[i]
-
-      if (block.type === 'text') {
-        elements.push(
-          <div key={i} className="whitespace-pre-wrap text-sm">
-            {block.text}
-          </div>
-        )
-        i++
-      } else if (block.type === 'tool_use') {
-        // Render tool use as a compact pill
-        elements.push(
-          <div key={i} className="flex items-center gap-2 mt-2 first:mt-0">
-            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-background/50 border border-border text-xs font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-accent" />
-              {block.name}
-            </span>
-          </div>
-        )
-        i++
-      } else if (block.type === 'tool_result') {
-        const content = typeof block.content === 'string' ? block.content : JSON.stringify(block.content)
-        const isLong = content.length > 150
-        const isExpanded = expandedResults.has(i)
-        const displayContent = isLong && !isExpanded ? content.slice(0, 150) + '...' : content
-
-        elements.push(
-          <div key={i} className="mt-2 first:mt-0">
-            <div className="rounded-md bg-code-bg border border-code-border overflow-hidden">
-              <pre className="p-2 text-xs font-mono text-code-text whitespace-pre-wrap break-all max-h-32 overflow-y-auto leading-relaxed">
-                {displayContent}
-              </pre>
-              {isLong && (
-                <button
-                  onClick={() => toggleResult(i)}
-                  className="w-full px-2 py-1 text-xs text-accent hover:bg-item-hover border-t border-code-border transition-colors"
-                >
-                  {isExpanded ? 'Show less' : 'Show more'}
-                </button>
-              )}
-            </div>
-          </div>
-        )
-        i++
-      } else {
-        i++
-      }
-    }
-
-    return elements
-  }
-
-  // For tool-result-only messages, render without the bubble wrapper
-  if (isToolResultOnly) {
-    return (
-      <div className="flex justify-start">
-        <div className="max-w-[85%]">
-          {renderContent()}
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[85%] rounded-lg px-3 py-2 ${
-          isUser ? 'bg-accent text-white' : 'bg-item-bg'
-        }`}
-      >
-        {renderContent()}
-      </div>
     </div>
   )
 }

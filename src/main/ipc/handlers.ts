@@ -17,10 +17,12 @@ const store = new Store<{
   lastProjectId?: string
   beansVisibleColumns?: Record<string, string[]>
   appearanceSettings?: AppearanceSettings
+  hiddenClaudeSessions?: string[]
 }>({
   defaults: {
     theme: 'dark',
-    appearanceSettings: { mode: 'system', customTheme: null }
+    appearanceSettings: { mode: 'system', customTheme: null },
+    hiddenClaudeSessions: []
   }
 })
 
@@ -213,6 +215,14 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
 
   ipcMain.handle('claudeTasks:stopWatcher', async () => {
     stopClaudeTasksWatcher()
+  })
+
+  ipcMain.handle('claudeTasks:getHiddenSessions', () => {
+    return store.get('hiddenClaudeSessions') ?? []
+  })
+
+  ipcMain.handle('claudeTasks:setHiddenSessions', (_event, sessionIds: string[]) => {
+    store.set('hiddenClaudeSessions', sessionIds)
   })
 }
 
