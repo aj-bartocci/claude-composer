@@ -796,29 +796,34 @@ function App() {
             <h2 className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">
               Project
             </h2>
-            <select
-              value={selectedProject?.id ?? ''}
-              onChange={(e) => {
-                const project = projects.find(p => p.id === e.target.value)
-                if (project) {
-                  setSelectedProject(project)
-                  setSelectedFilePath(null)
-                  setSessions([]) // Clear to prevent stale session filtering
-                  // Note: stickySubagents are loaded from localStorage in useEffect
-                }
-              }}
-              className="w-full p-2 text-sm rounded bg-item-bg border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-accent"
-            >
-              {projects.length === 0 ? (
-                <option value="" disabled>No projects found</option>
-              ) : (
-                projects.map(project => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))
-              )}
-            </select>
+            <div className="relative">
+              <select
+                value={selectedProject?.id ?? ''}
+                onChange={(e) => {
+                  const project = projects.find(p => p.id === e.target.value)
+                  if (project) {
+                    setSelectedProject(project)
+                    setSelectedFilePath(null)
+                    setSessions([]) // Clear to prevent stale session filtering
+                    // Note: stickySubagents are loaded from localStorage in useEffect
+                  }
+                }}
+                className="w-full p-2 pr-10 text-sm rounded bg-item-bg border border-accent text-foreground focus:outline-none focus:ring-1 focus:ring-accent appearance-none cursor-pointer"
+              >
+                {projects.length === 0 ? (
+                  <option value="" disabled>No projects found</option>
+                ) : (
+                  projects.map(project => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))
+                )}
+              </select>
+              <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
             {/* Tasks button - Claude's native task tracking */}
             <button
               onClick={() => setViewMode(viewMode === 'claude-board' ? 'files' : 'claude-board')}

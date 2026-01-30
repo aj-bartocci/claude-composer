@@ -2,6 +2,7 @@ import { app } from 'electron'
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import type { ThemeFile, CustomTheme } from '../../shared/types'
+import { bundledThemes } from './bundled-themes'
 
 const THEMES_DIR = path.join(app.getPath('home'), '.claude-center', 'themes')
 
@@ -12,9 +13,10 @@ async function ensureThemesDir(): Promise<void> {
 export async function getCustomThemes(): Promise<CustomTheme[]> {
   await ensureThemesDir()
 
+  const userThemes: CustomTheme[] = []
+
   try {
     const files = await fs.readdir(THEMES_DIR)
-    const themes: CustomTheme[] = []
 
     for (const file of files) {
       if (!file.endsWith('.json')) continue
@@ -24,7 +26,7 @@ export async function getCustomThemes(): Promise<CustomTheme[]> {
         const content = await fs.readFile(filePath, 'utf-8')
         const themeFile: ThemeFile = JSON.parse(content)
 
-        themes.push({
+        userThemes.push({
           id: file.replace('.json', ''),
           name: themeFile.name,
           file: themeFile,
@@ -33,11 +35,12 @@ export async function getCustomThemes(): Promise<CustomTheme[]> {
         // Skip invalid theme files
       }
     }
-
-    return themes
   } catch {
-    return []
+    // Directory read failed, just return bundled themes
   }
+
+  // Bundled themes first, then user themes
+  return [...bundledThemes, ...userThemes]
 }
 
 export async function importTheme(sourcePath: string): Promise<CustomTheme> {
@@ -55,35 +58,5 @@ export async function importTheme(sourcePath: string): Promise<CustomTheme> {
     id,
     name: themeFile.name,
     file: themeFile,
-  }
-}
-
-export async function ensureDefaultThemes(): Promise<void> {
-  await ensureThemesDir()
-
-  const neonNightPath = path.join(THEMES_DIR, 'neon-night.json')
-
-  try {
-    await fs.access(neonNightPath)
-  } catch {
-    const neonNight: ThemeFile = {
-      name: 'Neon Night',
-      dark: {
-        background: '#0a0a0f',
-        foreground: '#e0e0ff',
-        muted: '#7878a0',
-        accent: '#ff00ff',
-        border: '#2a2a3f',
-        sidebar: '#0d0d14',
-        panel: '#12121a',
-        itemBg: '#16161f',
-        itemHover: '#1f1f2e',
-        itemSelected: '#2a1a3a',
-        codeBg: '#0c0c12',
-        codeBorder: '#2a2a3f',
-        codeText: '#c0c0e0',
-      },
-    }
-    await fs.writeFile(neonNightPath, JSON.stringify(neonNight, null, 2), 'utf-8')
   }
 }

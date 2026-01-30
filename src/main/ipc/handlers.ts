@@ -8,7 +8,7 @@ import { spawnTerminal, writeToTerminal, resizeTerminal, killTerminal, type Term
 import { checkBeansDirectory, getBeans } from './beans'
 import { getAllTasks, getSessionTasks } from './claude-tasks'
 import { startBeansWatcher, stopBeansWatcher, startClaudeTasksWatcher, stopClaudeTasksWatcher } from '../watchers/claude-watcher'
-import { getCustomThemes, importTheme, ensureDefaultThemes } from './themes'
+import { getCustomThemes, importTheme } from './themes'
 import Store from 'electron-store'
 import type { Theme, AppearanceSettings } from '../../shared/types'
 
@@ -124,9 +124,6 @@ export function registerIpcHandlers(mainWindow: BrowserWindow) {
     }
     return result.filePaths[0]
   })
-
-  // Ensure default themes exist
-  ensureDefaultThemes().catch(console.error)
 
   // Project handlers
   ipcMain.handle('projects:getAll', async () => {

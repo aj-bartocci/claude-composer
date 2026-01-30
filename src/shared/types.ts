@@ -96,6 +96,7 @@ export interface CustomTheme {
   id: string                // filename without .json
   name: string
   file: ThemeFile
+  bundled?: boolean         // true for built-in themes
 }
 
 // Appearance settings persisted to disk

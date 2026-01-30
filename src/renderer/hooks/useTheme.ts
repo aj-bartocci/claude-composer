@@ -80,22 +80,39 @@ export function useTheme(api: ClaudeAPI) {
 
   useEffect(() => {
     const root = document.documentElement
-    root.classList.toggle('dark', isDark)
-
-    const baseColors = isDark ? DEFAULT_DARK : DEFAULT_LIGHT
     const customTheme = settings.customTheme
       ? customThemes.find(t => t.id === settings.customTheme)
       : null
 
-    let customColors: ThemeColors | undefined
+    // For themes that only support one mode, use that mode's colors regardless of current mode
+    let effectiveColors: ThemeColors | undefined
+    let effectiveDark = isDark
+
     if (customTheme) {
       const file = customTheme.file
-      customColors = file.colors ?? (isDark ? file.dark : file.light)
+      if (file.colors) {
+        effectiveColors = file.colors
+      } else if (isDark && file.dark) {
+        effectiveColors = file.dark
+      } else if (!isDark && file.light) {
+        effectiveColors = file.light
+      } else if (file.dark && !file.light) {
+        // Dark-only theme: use dark colors and force dark mode
+        effectiveColors = file.dark
+        effectiveDark = true
+      } else if (file.light && !file.dark) {
+        // Light-only theme: use light colors and force light mode
+        effectiveColors = file.light
+        effectiveDark = false
+      }
     }
+
+    root.classList.toggle('dark', effectiveDark)
+    const baseColors = effectiveDark ? DEFAULT_DARK : DEFAULT_LIGHT
 
     for (const [key, varName] of Object.entries(COLOR_TO_VAR)) {
       const colorKey = key as keyof ThemeColors
-      const value = customColors?.[colorKey] ?? baseColors[colorKey]
+      const value = effectiveColors?.[colorKey] ?? baseColors[colorKey]
       if (value) {
         root.style.setProperty(varName, value)
       }
