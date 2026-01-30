@@ -3,6 +3,7 @@ import type { ClaudeTask, ClaudeAPI, Session } from '../../shared/types'
 
 interface ClaudeBoardProps {
   api: ClaudeAPI
+  projectId: string
 }
 
 const SWIMLANES = ['pending', 'in_progress', 'completed'] as const
@@ -53,7 +54,7 @@ function saveCustomTitles(titles: Map<string, string>) {
   localStorage.setItem('claude-board-session-titles', JSON.stringify(Object.fromEntries(titles)))
 }
 
-export function ClaudeBoard({ api }: ClaudeBoardProps) {
+export function ClaudeBoard({ api, projectId }: ClaudeBoardProps) {
   const [tasks, setTasks] = useState<ClaudeTask[]>([])
   const [sessions, setSessions] = useState<Map<string, Session>>(new Map())
   const [customTitles, setCustomTitles] = useState<Map<string, string>>(loadCustomTitles)
@@ -67,16 +68,22 @@ export function ClaudeBoard({ api }: ClaudeBoardProps) {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [allTasks, allSessions, hidden] = await Promise.all([
+        const [allTasks, projectSessions, hidden] = await Promise.all([
           api.claudeTasks.getAllTasks(),
-          api.chat.getSessions(),
+          api.chat.getSessions(projectId),
           api.claudeTasks.getHiddenSessions(),
         ])
-        setTasks(allTasks)
+
+        // Build set of session IDs that belong to this project
+        const projectSessionIds = new Set(projectSessions.map(s => s.id))
+
+        // Filter tasks to only those from sessions in this project
+        const projectTasks = allTasks.filter(task => projectSessionIds.has(task.sessionId))
+        setTasks(projectTasks)
         setHiddenSessions(new Set(hidden))
 
         const sessionMap = new Map<string, Session>()
-        for (const session of allSessions) {
+        for (const session of projectSessions) {
           sessionMap.set(session.id, session)
         }
         setSessions(sessionMap)
@@ -90,15 +97,23 @@ export function ClaudeBoard({ api }: ClaudeBoardProps) {
     loadData()
     api.claudeTasks.startWatcher()
 
-    const unsubscribe = api.claudeTasks.onTasksChange((updatedTasks) => {
-      setTasks(updatedTasks as ClaudeTask[])
+    const unsubscribe = api.claudeTasks.onTasksChange(async (updatedTasks) => {
+      // Re-filter tasks when they change
+      try {
+        const projectSessions = await api.chat.getSessions(projectId)
+        const projectSessionIds = new Set(projectSessions.map(s => s.id))
+        const projectTasks = (updatedTasks as ClaudeTask[]).filter(task => projectSessionIds.has(task.sessionId))
+        setTasks(projectTasks)
+      } catch (err) {
+        console.error('Failed to filter updated tasks:', err)
+      }
     })
 
     return () => {
       unsubscribe()
       api.claudeTasks.stopWatcher()
     }
-  }, [api])
+  }, [api, projectId])
 
   // Group tasks by session and determine swimlane
   const sessionGroups = useMemo(() => {

@@ -948,7 +948,7 @@ function App() {
         {viewMode === 'board' ? (
           <BeansBoard beans={beans} projectId={selectedProject!.id} api={api} />
         ) : viewMode === 'claude-board' ? (
-          <ClaudeBoard api={api} />
+          <ClaudeBoard api={api} projectId={selectedProject!.id} />
         ) : (
           <main className="h-full bg-background flex flex-col overflow-hidden">
             {selectedFilePath && (
