@@ -1,34 +1,82 @@
-import { useState, useEffect } from 'react'
-import type { ClaudeTask, ClaudeAPI } from '../../shared/types'
+import { useState, useEffect, useMemo } from 'react'
+import type { ClaudeTask, ClaudeAPI, Session } from '../../shared/types'
 
 interface ClaudeBoardProps {
   api: ClaudeAPI
 }
 
-const STATUS_COLUMNS = ['pending', 'in_progress', 'completed'] as const
+const SWIMLANES = ['pending', 'in_progress', 'completed'] as const
+type Swimlane = typeof SWIMLANES[number]
 
-const STATUS_LABELS: Record<string, string> = {
+const SWIMLANE_LABELS: Record<Swimlane, string> = {
   pending: 'Pending',
   in_progress: 'In Progress',
   completed: 'Completed',
 }
 
-const STATUS_COLORS: Record<string, string> = {
+const SWIMLANE_COLORS: Record<Swimlane, string> = {
   pending: 'bg-gray-500',
   in_progress: 'bg-blue-500',
   completed: 'bg-green-500',
 }
 
+interface SessionGroup {
+  sessionId: string
+  tasks: ClaudeTask[]
+  swimlane: Swimlane
+}
+
+// Determine which swimlane a session belongs to based on its tasks
+function getSessionSwimlane(tasks: ClaudeTask[]): Swimlane {
+  if (tasks.length === 0) return 'pending'
+
+  const allPending = tasks.every(t => t.status === 'pending')
+  const allCompleted = tasks.every(t => t.status === 'completed')
+
+  if (allPending) return 'pending'
+  if (allCompleted) return 'completed'
+  return 'in_progress'
+}
+
+// Load custom session titles from localStorage
+function loadCustomTitles(): Map<string, string> {
+  try {
+    const stored = localStorage.getItem('claude-board-session-titles')
+    if (stored) {
+      return new Map(Object.entries(JSON.parse(stored)))
+    }
+  } catch {}
+  return new Map()
+}
+
+function saveCustomTitles(titles: Map<string, string>) {
+  localStorage.setItem('claude-board-session-titles', JSON.stringify(Object.fromEntries(titles)))
+}
+
 export function ClaudeBoard({ api }: ClaudeBoardProps) {
   const [tasks, setTasks] = useState<ClaudeTask[]>([])
+  const [sessions, setSessions] = useState<Map<string, Session>>(new Map())
+  const [customTitles, setCustomTitles] = useState<Map<string, string>>(loadCustomTitles)
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
   const [loading, setLoading] = useState(true)
+  const [expandedSessions, setExpandedSessions] = useState<Set<string>>(new Set())
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
 
   useEffect(() => {
-    const loadTasks = async () => {
+    const loadData = async () => {
       try {
-        const allTasks = await api.claudeTasks.getAllTasks()
+        const [allTasks, allSessions] = await Promise.all([
+          api.claudeTasks.getAllTasks(),
+          api.chat.getSessions(),
+        ])
         setTasks(allTasks)
+
+        const sessionMap = new Map<string, Session>()
+        for (const session of allSessions) {
+          sessionMap.set(session.id, session)
+        }
+        setSessions(sessionMap)
       } catch (err) {
         console.error('Failed to load Claude tasks:', err)
       } finally {
@@ -36,7 +84,7 @@ export function ClaudeBoard({ api }: ClaudeBoardProps) {
       }
     }
 
-    loadTasks()
+    loadData()
     api.claudeTasks.startWatcher()
 
     const unsubscribe = api.claudeTasks.onTasksChange((updatedTasks) => {
@@ -49,7 +97,53 @@ export function ClaudeBoard({ api }: ClaudeBoardProps) {
     }
   }, [api])
 
-  const toggleExpanded = (taskId: string, sessionId: string) => {
+  // Group tasks by session and determine swimlane
+  const sessionGroups = useMemo(() => {
+    const groups = new Map<string, ClaudeTask[]>()
+
+    for (const task of tasks) {
+      const existing = groups.get(task.sessionId) || []
+      existing.push(task)
+      groups.set(task.sessionId, existing)
+    }
+
+    const result: SessionGroup[] = []
+    for (const [sessionId, sessionTasks] of groups) {
+      const swimlane = getSessionSwimlane(sessionTasks)
+      result.push({ sessionId, tasks: sessionTasks, swimlane })
+    }
+
+    return result
+  }, [tasks])
+
+  // Group sessions by swimlane
+  const sessionsBySwimlane = useMemo(() => {
+    const result: Record<Swimlane, SessionGroup[]> = {
+      pending: [],
+      in_progress: [],
+      completed: [],
+    }
+
+    for (const group of sessionGroups) {
+      result[group.swimlane].push(group)
+    }
+
+    return result
+  }, [sessionGroups])
+
+  const toggleExpanded = (sessionId: string) => {
+    setExpandedSessions(prev => {
+      const next = new Set(prev)
+      if (next.has(sessionId)) {
+        next.delete(sessionId)
+      } else {
+        next.add(sessionId)
+      }
+      return next
+    })
+  }
+
+  const toggleTaskExpanded = (sessionId: string, taskId: string) => {
     const key = `${sessionId}:${taskId}`
     setExpandedTasks(prev => {
       const next = new Set(prev)
@@ -62,11 +156,30 @@ export function ClaudeBoard({ api }: ClaudeBoardProps) {
     })
   }
 
-  // Group tasks by status
-  const tasksByStatus = STATUS_COLUMNS.reduce((acc, status) => {
-    acc[status] = tasks.filter(t => t.status === status)
-    return acc
-  }, {} as Record<string, ClaudeTask[]>)
+  const startEditing = (sessionId: string, currentTitle: string) => {
+    setEditingSessionId(sessionId)
+    setEditValue(currentTitle)
+  }
+
+  const saveTitle = (sessionId: string) => {
+    const trimmed = editValue.trim()
+    setCustomTitles(prev => {
+      const next = new Map(prev)
+      if (trimmed) {
+        next.set(sessionId, trimmed)
+      } else {
+        next.delete(sessionId)
+      }
+      saveCustomTitles(next)
+      return next
+    })
+    setEditingSessionId(null)
+  }
+
+  const cancelEditing = () => {
+    setEditingSessionId(null)
+    setEditValue('')
+  }
 
   if (loading) {
     return (
@@ -95,94 +208,182 @@ export function ClaudeBoard({ api }: ClaudeBoardProps) {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <h2 className="text-sm font-medium">Claude Board</h2>
-        <span className="text-xs text-muted">{tasks.length} task{tasks.length !== 1 ? 's' : ''}</span>
+        <span className="text-xs text-muted">
+          {sessionGroups.length} session{sessionGroups.length !== 1 ? 's' : ''} · {tasks.length} task{tasks.length !== 1 ? 's' : ''}
+        </span>
       </div>
 
-      {/* Kanban columns */}
+      {/* Kanban swimlanes */}
       <div className="flex-1 overflow-x-auto p-4">
         <div className="flex gap-4 h-full min-w-max">
-          {STATUS_COLUMNS.map(status => (
+          {SWIMLANES.map(swimlane => (
             <div
-              key={status}
+              key={swimlane}
               className="flex flex-col w-80 bg-sidebar rounded-lg border border-border"
             >
-              {/* Column header */}
+              {/* Swimlane header */}
               <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
-                <span className={`w-2 h-2 rounded-full ${STATUS_COLORS[status]}`} />
-                <span className="text-sm font-medium">{STATUS_LABELS[status]}</span>
+                <span className={`w-2 h-2 rounded-full ${SWIMLANE_COLORS[swimlane]}`} />
+                <span className="text-sm font-medium">{SWIMLANE_LABELS[swimlane]}</span>
                 <span className="text-xs text-muted ml-auto">
-                  {tasksByStatus[status].length}
+                  {sessionsBySwimlane[swimlane].length}
                 </span>
               </div>
 
-              {/* Column content */}
-              <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                {tasksByStatus[status].map(task => {
-                  const key = `${task.sessionId}:${task.id}`
-                  const isExpanded = expandedTasks.has(key)
+              {/* Session cards */}
+              <div className="flex-1 overflow-y-auto p-2 space-y-3">
+                {sessionsBySwimlane[swimlane].map(({ sessionId, tasks: sessionTasks }) => {
+                  const session = sessions.get(sessionId)
+                  const defaultTitle = session?.preview || `Session ${sessionId.slice(0, 8)}`
+                  const sessionTitle = customTitles.get(sessionId) || defaultTitle
+                  const isEditing = editingSessionId === sessionId
+                  const isExpanded = expandedSessions.has(sessionId)
+
+                  const completedCount = sessionTasks.filter(t => t.status === 'completed').length
+                  const inProgressCount = sessionTasks.filter(t => t.status === 'in_progress').length
+                  const totalCount = sessionTasks.length
+                  const progress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
 
                   return (
                     <div
-                      key={key}
-                      className="bg-panel rounded-md border border-border p-3 cursor-pointer hover:border-accent/50 transition-colors"
-                      onClick={() => toggleExpanded(task.id, task.sessionId)}
+                      key={sessionId}
+                      className="bg-panel rounded-md border border-border overflow-hidden hover:border-accent/50 transition-colors"
                     >
-                      {/* Task header */}
-                      <div className="flex items-start gap-2">
-                        <span className="text-xs text-muted font-mono">#{task.id}</span>
-                        <h3 className="text-sm font-medium flex-1">{task.subject}</h3>
+                      {/* Session header */}
+                      <div
+                        className="p-3 cursor-pointer"
+                        onClick={() => !isEditing && toggleExpanded(sessionId)}
+                      >
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1 min-w-0">
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') saveTitle(sessionId)
+                                  else if (e.key === 'Escape') cancelEditing()
+                                }}
+                                onBlur={() => saveTitle(sessionId)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-sm font-medium bg-background border border-accent rounded px-2 py-0.5 outline-none w-full"
+                                placeholder={defaultTitle}
+                                autoFocus
+                              />
+                            ) : (
+                              <span
+                                className="text-sm font-medium line-clamp-2 hover:text-accent transition-colors"
+                                title={`${sessionTitle} (double-click to rename)`}
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation()
+                                  startEditing(sessionId, sessionTitle)
+                                }}
+                              >
+                                {sessionTitle}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-muted text-xs flex-shrink-0">
+                            {isExpanded ? '▾' : '▸'}
+                          </span>
+                        </div>
+
+                        {/* Progress bar */}
+                        <div className="flex items-center gap-2 mt-2">
+                          <div className="flex-1 h-1.5 bg-border rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-green-500 transition-all"
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted">
+                            {completedCount}/{totalCount}
+                          </span>
+                        </div>
+
+                        {/* Status summary */}
+                        {inProgressCount > 0 && (
+                          <div className="mt-2 text-xs text-accent">
+                            {inProgressCount} task{inProgressCount !== 1 ? 's' : ''} in progress
+                          </div>
+                        )}
                       </div>
 
-                      {/* Active form indicator */}
-                      {task.activeForm && task.status === 'in_progress' && (
-                        <div className="mt-2 flex items-center gap-2 text-xs text-accent">
-                          <span className="animate-pulse">*</span>
-                          <span>{task.activeForm}</span>
+                      {/* Expanded task list */}
+                      {isExpanded && (
+                        <div className="border-t border-border px-3 py-2 space-y-2 bg-background/30">
+                          {sessionTasks.map(task => {
+                            const taskKey = `${sessionId}:${task.id}`
+                            const isTaskExpanded = expandedTasks.has(taskKey)
+
+                            return (
+                              <div
+                                key={task.id}
+                                className="rounded border border-border bg-panel p-2 cursor-pointer hover:border-accent/50 transition-colors"
+                                onClick={() => toggleTaskExpanded(sessionId, task.id)}
+                              >
+                                <div className="flex items-start gap-2 text-sm">
+                                  <span className={`w-2 h-2 rounded-full ${SWIMLANE_COLORS[task.status]} flex-shrink-0 mt-1.5`} />
+                                  <span className="text-xs text-muted font-mono flex-shrink-0 mt-0.5">#{task.id}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <span className={isTaskExpanded ? '' : 'truncate block'}>{task.subject}</span>
+                                    {task.activeForm && task.status === 'in_progress' && (
+                                      <div className="text-xs text-accent mt-0.5 flex items-center gap-1">
+                                        <span className="animate-pulse">*</span>
+                                        <span className="truncate">{task.activeForm}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <span className="text-muted text-xs flex-shrink-0">
+                                    {isTaskExpanded ? '▾' : '▸'}
+                                  </span>
+                                </div>
+
+                                {/* Expanded task details */}
+                                {isTaskExpanded && (
+                                  <div className="mt-2 pt-2 border-t border-border space-y-2">
+                                    {task.description && (
+                                      <p className="text-sm text-muted whitespace-pre-wrap">
+                                        {task.description}
+                                      </p>
+                                    )}
+
+                                    {/* Dependencies */}
+                                    {(task.blocks.length > 0 || task.blockedBy.length > 0) && (
+                                      <div className="flex flex-wrap gap-1">
+                                        {task.blockedBy.map(id => (
+                                          <span
+                                            key={`blockedBy-${id}`}
+                                            className="text-xs px-1.5 py-0.5 rounded bg-red-500/20 text-red-400"
+                                          >
+                                            blocked by #{id}
+                                          </span>
+                                        ))}
+                                        {task.blocks.map(id => (
+                                          <span
+                                            key={`blocks-${id}`}
+                                            className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400"
+                                          >
+                                            blocks #{id}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
-
-                      {/* Expanded description */}
-                      {isExpanded && task.description && (
-                        <div className="mt-3 pt-3 border-t border-border">
-                          <p className="text-sm text-muted whitespace-pre-wrap">
-                            {task.description}
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Dependencies */}
-                      {(task.blocks.length > 0 || task.blockedBy.length > 0) && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {task.blockedBy.map(id => (
-                            <span
-                              key={`blockedBy-${id}`}
-                              className="text-xs px-1.5 py-0.5 rounded bg-red-500/20 text-red-400"
-                            >
-                              blocked by #{id}
-                            </span>
-                          ))}
-                          {task.blocks.map(id => (
-                            <span
-                              key={`blocks-${id}`}
-                              className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400"
-                            >
-                              blocks #{id}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Session info */}
-                      <div className="mt-2 text-xs text-muted truncate" title={task.sessionId}>
-                        Session: {task.sessionId.slice(0, 8)}...
-                      </div>
                     </div>
                   )
                 })}
 
-                {tasksByStatus[status].length === 0 && (
-                  <div className="text-xs text-muted text-center py-4">
-                    No tasks
+                {sessionsBySwimlane[swimlane].length === 0 && (
+                  <div className="text-xs text-muted text-center py-8">
+                    No sessions
                   </div>
                 )}
               </div>
